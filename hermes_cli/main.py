@@ -3018,9 +3018,11 @@ def _apply_safe_mode(args) -> None:
 
 
 def _apply_user_config_bypass(args) -> None:
-    """Apply the explicit config bypass before any startup config reads."""
+    """Apply invocation-level provider and config restrictions before startup."""
     if getattr(args, "ignore_user_config", False):
         os.environ["HERMES_IGNORE_USER_CONFIG"] = "1"
+    if getattr(args, "no_fallback", False):
+        os.environ["HERMES_NO_FALLBACK"] = "1"
 
 
 def _guard_noninteractive_user_config(args) -> None:
