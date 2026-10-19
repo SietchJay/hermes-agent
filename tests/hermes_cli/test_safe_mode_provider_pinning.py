@@ -106,6 +106,30 @@ class SafeModeProviderPinningTests(TestCase):
                     extra_body=None,reasoning_config=None,extra_headers=None,
                     api_mode=None,route_info=None)
 
+    def test_safe_mode_auto_provider_fails_closed_in_oneshot(self):
+        from hermes_cli.oneshot import _ModelChoice, _resolve_one_shot_runtime
+        for flag in ("HERMES_SAFE_MODE", "HERMES_IGNORE_USER_CONFIG"):
+            with self.subTest(flag=flag), patch.dict(os.environ, {flag:"1"}, clear=True),                  patch("hermes_cli.runtime_provider.resolve_runtime_provider",
+                       side_effect=AssertionError("must not select account")):
+                with self.assertRaisesRegex(ValueError,"explicit --provider"):
+                    _resolve_one_shot_runtime({}, _ModelChoice(provider="auto", model="synthetic"))
+
+    def test_safe_mode_auto_provider_fails_closed_in_classic_chat(self):
+        from hermes_cli.cli_agent_setup_mixin import (
+            _no_fallback_provider_missing, CLIAgentSetupMixin,
+        )
+        for flag in ("HERMES_SAFE_MODE", "HERMES_IGNORE_USER_CONFIG"):
+            with self.subTest(flag=flag), patch.dict(os.environ, {flag:"1"}, clear=True),                  patch("hermes_cli.runtime_provider.resolve_runtime_provider",
+                       side_effect=AssertionError("must not select account")):
+                self.assertTrue(_no_fallback_provider_missing(None))
+                cli=CLIAgentSetupMixin()
+                cli.requested_provider=None
+                cli._explicit_api_key=None
+                cli._explicit_base_url=None
+                ready,error=cli._probe_runtime_credentials()
+                self.assertFalse(ready)
+                self.assertIsInstance(error,ValueError)
+
     def test_normal_oneshot_keeps_existing_fallback_policy(self):
         from hermes_cli.oneshot import _ModelChoice, _resolve_one_shot_runtime
         choice = _ModelChoice(model="model-x", provider="nous")

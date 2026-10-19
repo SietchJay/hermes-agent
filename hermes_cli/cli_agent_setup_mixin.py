@@ -15,7 +15,9 @@ from utils import base_url_host_matches
 
 def _no_fallback_provider_missing(provider) -> bool:
     """Never use implicit multi-account resolution under pinned routing."""
-    return (os.environ.get("HERMES_NO_FALLBACK") == "1"
+    return ((os.environ.get("HERMES_NO_FALLBACK") == "1"
+             or os.environ.get("HERMES_SAFE_MODE") == "1"
+             or os.environ.get("HERMES_IGNORE_USER_CONFIG") == "1")
             and (not provider or str(provider).strip().lower() == "auto"))
 
 
