@@ -2272,7 +2272,8 @@ def _is_free_model(model: Optional[str]) -> bool:
 def _aux_openrouter_settings() -> tuple[bool, str]:
     """Read (free_only, openrouter_model) from config; (False, _OPENROUTER_MODEL) on failure."""
     # Safe mode ignores the user's free_only setting. Keep auxiliary routes free-only.
-    if os.environ.get("HERMES_SAFE_MODE") == "1":
+    if (os.environ.get("HERMES_SAFE_MODE") == "1"
+            or os.environ.get("HERMES_NO_FALLBACK") == "1"):
         return True, _OPENROUTER_MODEL
     try:
         from hermes_cli.config import cfg_get, load_config_readonly
@@ -4687,6 +4688,8 @@ def _resolve_auto_route(
     routed = _try_main_provider_route(main_provider, main_model, base_url, api_key, api_mode)
     if routed is not None:
         return routed
+    if os.environ.get("HERMES_NO_FALLBACK") == "1":
+        return None, None, ""
     if task:
         fb_client, fb_model, fb_label = _try_configured_fallback_chain(
             task, main_provider or "auto", reason="main provider unavailable")

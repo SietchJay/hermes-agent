@@ -42,6 +42,38 @@ class SafeModeProviderPinningTests(TestCase):
             self.assertEqual(model, _OPENROUTER_MODEL)
 
 
+
+    def test_no_fallback_oneshot_resolves_only_requested_provider(self):
+        from hermes_cli.oneshot import _ModelChoice, _resolve_one_shot_runtime
+        choice = _ModelChoice(model="stepfun/step-3.7-flash:free", provider="nous")
+        expected = {"provider": "nous", "api_key": "opaque", "base_url": "https://example.test"}
+        with patch.dict(os.environ, {"HERMES_NO_FALLBACK": "1"}),              patch("hermes_cli.runtime_provider.resolve_runtime_provider", return_value=expected) as direct,              patch("hermes_cli.runtime_provider.resolve_runtime_with_fallback",
+                   side_effect=AssertionError("fallback must never run")):
+            runtime, entry = _resolve_one_shot_runtime({"fallback_providers": [{"provider": "openrouter", "model": "paid"}]}, choice)
+        self.assertEqual(runtime, expected)
+        self.assertIsNone(entry)
+        direct.assert_called_once()
+
+    def test_normal_oneshot_keeps_existing_fallback_policy(self):
+        from hermes_cli.oneshot import _ModelChoice, _resolve_one_shot_runtime
+        choice = _ModelChoice(model="model-x", provider="nous")
+        with patch.dict(os.environ, {}, clear=True),              patch("hermes_cli.runtime_provider.resolve_runtime_provider",
+                   side_effect=AssertionError("normal path must use fallback resolver")),              patch("hermes_cli.runtime_provider.resolve_runtime_with_fallback",
+                   return_value=({"provider": "openrouter"}, {"provider": "openrouter", "model": "paid"})) as fallback:
+            runtime, entry = _resolve_one_shot_runtime({"fallback_providers": []}, choice)
+        self.assertEqual(runtime["provider"], "openrouter")
+        self.assertIsNotNone(entry)
+        fallback.assert_called_once()
+
+    def test_no_fallback_auxiliary_auto_does_not_discover_alternates(self):
+        from agent.auxiliary_client import _resolve_auto_route
+        with patch.dict(os.environ, {"HERMES_NO_FALLBACK": "1"}),              patch("agent.auxiliary_client._normalize_main_runtime", return_value={}),              patch("agent.auxiliary_client._warn_stale_openai_base_url"),              patch("agent.auxiliary_client._main_route_target",
+                   return_value=("nous", "model", "", "opaque", "chat_completions")),              patch("agent.auxiliary_client._try_main_provider_route", return_value=None),              patch("agent.auxiliary_client._try_configured_fallback_chain",
+                   side_effect=AssertionError("configured fallback forbidden")),              patch("agent.auxiliary_client._try_main_fallback_chain",
+                   side_effect=AssertionError("main fallback forbidden")),              patch("agent.auxiliary_client._try_discovery_chain",
+                   side_effect=AssertionError("discovery forbidden")):
+            self.assertEqual(_resolve_auto_route(task="title_generation"), (None, None, ""))
+
 if __name__ == "__main__":
     import unittest
     unittest.main()
