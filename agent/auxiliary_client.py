@@ -8120,6 +8120,11 @@ def _plan_aux_call(
     drivers pass to ``_retry_same_provider_*`` / ``_call_fallback_candidate_*``. One immutable
     runtime snapshot for keying/resolution/retries/fallbacks, so a concurrent /model switch
     can't mix key and client from different runtimes."""
+    # Strict one-shot review mode forbids ALL auxiliary LLM dispatch, including
+    # first-party/same-provider title, vision, compression and fallback calls.
+    # An auxiliary has its own routing policy and may select another account.
+    if os.environ.get("HERMES_NO_FALLBACK") == "1":
+        raise RuntimeError("Auxiliary model calls disabled by --no-fallback")
     main_runtime = _normalize_main_runtime(main_runtime)
     req = _prepare_aux_request(
         task, provider=provider, model=model, base_url=base_url, api_key=api_key,

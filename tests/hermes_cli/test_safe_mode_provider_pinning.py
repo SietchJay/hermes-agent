@@ -65,6 +65,20 @@ class SafeModeProviderPinningTests(TestCase):
         self.assertIsNotNone(entry)
         fallback.assert_called_once()
 
+    def test_no_fallback_denies_auxiliary_model_call_before_provider_resolution(self):
+        from agent.auxiliary_client import _plan_aux_call
+        with patch.dict(os.environ, {"HERMES_NO_FALLBACK": "1"}), \
+             patch("agent.auxiliary_client._normalize_main_runtime",
+                   side_effect=AssertionError("must not even resolve an auxiliary provider")):
+            with self.assertRaisesRegex(RuntimeError, "Auxiliary model calls disabled"):
+                _plan_aux_call(
+                    "vision", async_mode=False, provider="auto", model=None,
+                    base_url=None, api_key=None, main_runtime=None,
+                    messages=[{"role":"user","content":"test"}],
+                    temperature=None,max_tokens=8,tools=None,timeout=None,
+                    extra_body=None,reasoning_config=None,extra_headers=None,
+                    api_mode=None,route_info=None)
+
     def test_no_fallback_auxiliary_auto_does_not_discover_alternates(self):
         from agent.auxiliary_client import _resolve_auto_route
         with patch.dict(os.environ, {"HERMES_NO_FALLBACK": "1"}),              patch("agent.auxiliary_client._normalize_main_runtime", return_value={}),              patch("agent.auxiliary_client._warn_stale_openai_base_url"),              patch("agent.auxiliary_client._main_route_target",
