@@ -2271,6 +2271,9 @@ def _is_free_model(model: Optional[str]) -> bool:
 
 def _aux_openrouter_settings() -> tuple[bool, str]:
     """Read (free_only, openrouter_model) from config; (False, _OPENROUTER_MODEL) on failure."""
+    # Safe mode ignores the user's free_only setting. Keep auxiliary routes free-only.
+    if os.environ.get("HERMES_SAFE_MODE") == "1":
+        return True, _OPENROUTER_MODEL
     try:
         from hermes_cli.config import cfg_get, load_config_readonly
         cfg = load_config_readonly()
