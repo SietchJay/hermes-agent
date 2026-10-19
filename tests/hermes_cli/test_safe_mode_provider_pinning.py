@@ -68,6 +68,30 @@ class SafeModeProviderPinningTests(TestCase):
                         {"fallback_providers":[{"provider":"openrouter"}]},
                         _ModelChoice(provider=candidate,model="some-model"))
 
+    def test_classic_chat_requires_explicit_pinned_provider(self):
+        from hermes_cli.cli_agent_setup_mixin import (
+            CLIAgentSetupMixin, _no_fallback_provider_missing,
+        )
+        with patch.dict(os.environ, {"HERMES_NO_FALLBACK":"1"}):
+            for selected in (None, "", "auto", "AUTO"):
+                with self.subTest(selected=selected):
+                    self.assertTrue(_no_fallback_provider_missing(selected))
+                    cli = CLIAgentSetupMixin()
+                    cli.requested_provider = selected
+                    cli._explicit_api_key = None
+                    cli._explicit_base_url = None
+                    ready, err = cli._probe_runtime_credentials()
+                    self.assertFalse(ready)
+                    self.assertIsInstance(err, ValueError)
+            self.assertFalse(_no_fallback_provider_missing("nous"))
+
+    def test_classic_chat_prevents_fallback_on_auth_error(self):
+        from hermes_cli.cli_agent_setup_mixin import CLIAgentSetupMixin
+        from hermes_cli.auth import AuthError
+        with patch.dict(os.environ, {"HERMES_NO_FALLBACK":"1"}):
+            cli = CLIAgentSetupMixin()
+            self.assertIsNone(cli._resolve_fallback_runtime(AuthError("blocked")))
+
     def test_safe_mode_forbids_auxiliary_dispatch(self):
         from agent.auxiliary_client import _plan_aux_call
         with patch.dict(os.environ, {"HERMES_SAFE_MODE":"1"}, clear=True), \

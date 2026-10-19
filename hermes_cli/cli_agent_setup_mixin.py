@@ -4,12 +4,19 @@ imported lazily inside each method (import cycle)."""
 
 from __future__ import annotations
 
+import os
 import sys
 
 from rich.markup import escape as _escape
 
 from agent.i18n import t
 from utils import base_url_host_matches
+
+
+def _no_fallback_provider_missing(provider) -> bool:
+    """Never use implicit multi-account resolution under pinned routing."""
+    return (os.environ.get("HERMES_NO_FALLBACK") == "1"
+            and (not provider or str(provider).strip().lower() == "auto"))
 
 
 def _single_query_clarify_callback(questions: list) -> dict:
@@ -240,6 +247,8 @@ class CLIAgentSetupMixin:
         self._credentials_rate_limited = False
         self._credentials_terminal = False
         try:
+            if _no_fallback_provider_missing(self.requested_provider):
+                raise ValueError("--no-fallback requires an explicit --provider")
             # target_model: the ladder's model-keyed rungs (Zen/Go api_mode, Copilot/Nous
             # api_mode) must see the model this CLI will actually send, not config's `default`,
             # or `hermes -m mimo-v2.5 --provider opencode-go` resolves an api_mode/base_url the
@@ -368,6 +377,8 @@ class CLIAgentSetupMixin:
         from cli import _cprint, logger
         from hermes_cli.auth import AuthError, primary_failure_wording
         from hermes_cli.runtime_provider import resolve_runtime_provider
+        if os.environ.get("HERMES_NO_FALLBACK") == "1":
+            return None
         if not isinstance(primary_exc, AuthError):
             return None
         _fb_chain = self._fallback_model if isinstance(self._fallback_model, list) else []
@@ -418,6 +429,8 @@ class CLIAgentSetupMixin:
         swallowed by the "auto" ladder and stamped on a keyless fallback — ``None`` when a provider
         resolved (usable or merely keyless). Never prints or mutates CLI state."""
         from hermes_cli.runtime_provider import resolve_runtime_provider
+        if _no_fallback_provider_missing(self.requested_provider):
+            return False, ValueError("--no-fallback requires an explicit --provider")
         try:
             runtime = resolve_runtime_provider(
                 requested=self.requested_provider, explicit_api_key=self._explicit_api_key,
