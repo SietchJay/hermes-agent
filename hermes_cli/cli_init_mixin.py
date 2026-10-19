@@ -293,7 +293,9 @@ class CLIInitMixin:
                 pass
 
         self._fallback_model = (
-            [] if os.environ.get("HERMES_NO_FALLBACK") == "1"
+            [] if any(os.environ.get(flag) == "1" for flag in (
+                "HERMES_NO_FALLBACK", "HERMES_SAFE_MODE",
+                "HERMES_IGNORE_USER_CONFIG"))
             else get_fallback_chain(CLI_CONFIG)
         )
 

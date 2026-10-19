@@ -379,7 +379,9 @@ class CLIAgentSetupMixin:
         from cli import _cprint, logger
         from hermes_cli.auth import AuthError, primary_failure_wording
         from hermes_cli.runtime_provider import resolve_runtime_provider
-        if os.environ.get("HERMES_NO_FALLBACK") == "1":
+        if any(os.environ.get(flag) == "1" for flag in (
+                "HERMES_NO_FALLBACK", "HERMES_SAFE_MODE",
+                "HERMES_IGNORE_USER_CONFIG")):
             return None
         if not isinstance(primary_exc, AuthError):
             return None

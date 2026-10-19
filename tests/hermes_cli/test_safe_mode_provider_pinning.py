@@ -155,6 +155,23 @@ class SafeModeProviderPinningTests(TestCase):
                     extra_body=None,reasoning_config=None,extra_headers=None,
                     api_mode=None,route_info=None)
 
+    def test_ignore_user_config_denies_auxiliary_dispatch_and_titles(self):
+        from agent.auxiliary_client import _plan_aux_call
+        for flag in ("HERMES_IGNORE_USER_CONFIG", "HERMES_SAFE_MODE", "HERMES_NO_FALLBACK"):
+            with self.subTest(flag=flag), patch.dict(os.environ, {flag:"1"}, clear=True), \
+                 patch("agent.auxiliary_client._normalize_main_runtime",
+                       side_effect=AssertionError("never resolve auxiliary account")):
+                self.assertFalse(_auto_title_enabled())
+                self.assertFalse(_model_title_upgrade_enabled())
+                with self.assertRaisesRegex(RuntimeError,"Auxiliary model calls disabled"):
+                    _plan_aux_call(
+                        "vision", async_mode=False, provider="auto", model=None,
+                        base_url=None, api_key=None, main_runtime=None,
+                        messages=[{"role":"user","content":"synthetic"}],
+                        temperature=None,max_tokens=8,tools=None,timeout=None,
+                        extra_body=None,reasoning_config=None,extra_headers=None,
+                        api_mode=None,route_info=None)
+
     def test_no_fallback_auxiliary_auto_does_not_discover_alternates(self):
         from agent.auxiliary_client import _resolve_auto_route
         with patch.dict(os.environ, {"HERMES_NO_FALLBACK": "1"}),              patch("agent.auxiliary_client._normalize_main_runtime", return_value={}),              patch("agent.auxiliary_client._warn_stale_openai_base_url"),              patch("agent.auxiliary_client._main_route_target",

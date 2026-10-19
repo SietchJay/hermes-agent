@@ -2273,7 +2273,8 @@ def _aux_openrouter_settings() -> tuple[bool, str]:
     """Read (free_only, openrouter_model) from config; (False, _OPENROUTER_MODEL) on failure."""
     # Safe mode ignores the user's free_only setting. Keep auxiliary routes free-only.
     if (os.environ.get("HERMES_SAFE_MODE") == "1"
-            or os.environ.get("HERMES_NO_FALLBACK") == "1"):
+            or os.environ.get("HERMES_NO_FALLBACK") == "1"
+            or os.environ.get("HERMES_IGNORE_USER_CONFIG") == "1"):
         return True, _OPENROUTER_MODEL
     try:
         from hermes_cli.config import cfg_get, load_config_readonly
@@ -4689,7 +4690,8 @@ def _resolve_auto_route(
     if routed is not None:
         return routed
     if (os.environ.get("HERMES_NO_FALLBACK") == "1"
-            or os.environ.get("HERMES_SAFE_MODE") == "1"):
+            or os.environ.get("HERMES_SAFE_MODE") == "1"
+            or os.environ.get("HERMES_IGNORE_USER_CONFIG") == "1"):
         return None, None, ""
     if task:
         fb_client, fb_model, fb_label = _try_configured_fallback_chain(
@@ -8125,8 +8127,9 @@ def _plan_aux_call(
     # first-party/same-provider title, vision, compression and fallback calls.
     # An auxiliary has its own routing policy and may select another account.
     if (os.environ.get("HERMES_NO_FALLBACK") == "1"
-            or os.environ.get("HERMES_SAFE_MODE") == "1"):
-        raise RuntimeError("Auxiliary model calls disabled by safe/no-fallback mode")
+            or os.environ.get("HERMES_SAFE_MODE") == "1"
+            or os.environ.get("HERMES_IGNORE_USER_CONFIG") == "1"):
+        raise RuntimeError("Auxiliary model calls disabled by strict routing mode")
     main_runtime = _normalize_main_runtime(main_runtime)
     req = _prepare_aux_request(
         task, provider=provider, model=model, base_url=base_url, api_key=api_key,
