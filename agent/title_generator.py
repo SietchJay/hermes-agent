@@ -159,6 +159,8 @@ def _title_language() -> str:
 
 
 def _auto_title_enabled() -> bool:
+    if os.environ.get("HERMES_SAFE_MODE") == "1":
+        return False
     try:
         from utils import is_truthy_value
         return is_truthy_value(_title_config().get("enabled"), default=True)
@@ -169,6 +171,8 @@ def _auto_title_enabled() -> bool:
 
 def _model_title_upgrade_enabled() -> bool:
     """Distinct from ``enabled``: keep the instant derived title, skip the background model call (#85194)."""
+    if os.environ.get("HERMES_SAFE_MODE") == "1":
+        return False
     try:
         from utils import is_truthy_value
         return is_truthy_value(_title_config().get("model_upgrade_enabled"), default=True)

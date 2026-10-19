@@ -36,6 +36,14 @@ class CLIChatTurnMixin:
         per-turn, fail-closed contract as the Desktop/TUI and messaging gateways: a torn config.yaml
         keeps the last known-good chain instead of reading as "chain removed"."""
         from cli import logger
+        # Safe mode / ignore-user-config must not reimport on-disk fallback chains.
+        if os.environ.get("HERMES_SAFE_MODE") == "1" or os.environ.get("HERMES_IGNORE_USER_CONFIG") == "1" or os.environ.get("HERMES_NO_FALLBACK") == "1":
+            from gateway.run import GatewayRunner
+            self._fallback_model = []
+            agent._fallback_activated = False
+            agent._rate_limited_until = 0
+            GatewayRunner._apply_fallback_chain_to_agent(agent, [])
+            return
         try:
             from gateway.run import GatewayRunner
             from hermes_cli.config_effective import load_user_config_effective
