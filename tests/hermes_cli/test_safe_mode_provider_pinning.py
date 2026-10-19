@@ -54,6 +54,34 @@ class SafeModeProviderPinningTests(TestCase):
         self.assertIsNone(entry)
         direct.assert_called_once()
 
+    def test_no_fallback_rejects_auto_provider_before_auth_resolution(self):
+        from hermes_cli.oneshot import _ModelChoice, _resolve_one_shot_runtime
+        for candidate in (None, "", "auto", "AUTO"):
+            with self.subTest(provider=candidate), \
+                 patch.dict(os.environ, {"HERMES_NO_FALLBACK":"1"}), \
+                 patch("hermes_cli.runtime_provider.resolve_runtime_provider",
+                       side_effect=AssertionError("must not reach auth ladder")), \
+                 patch("hermes_cli.runtime_provider.resolve_runtime_with_fallback",
+                       side_effect=AssertionError("must not fall back")):
+                with self.assertRaisesRegex(ValueError,"requires an explicit --provider"):
+                    _resolve_one_shot_runtime(
+                        {"fallback_providers":[{"provider":"openrouter"}]},
+                        _ModelChoice(provider=candidate,model="some-model"))
+
+    def test_safe_mode_forbids_auxiliary_dispatch(self):
+        from agent.auxiliary_client import _plan_aux_call
+        with patch.dict(os.environ, {"HERMES_SAFE_MODE":"1"}, clear=True), \
+             patch("agent.auxiliary_client._normalize_main_runtime",
+                   side_effect=AssertionError("no auxiliary provider resolution")):
+            with self.assertRaisesRegex(RuntimeError,"disabled"):
+                _plan_aux_call(
+                    "vision", async_mode=False, provider="auto", model=None,
+                    base_url=None, api_key=None, main_runtime=None,
+                    messages=[{"role":"user","content":"test"}],
+                    temperature=None,max_tokens=8,tools=None,timeout=None,
+                    extra_body=None,reasoning_config=None,extra_headers=None,
+                    api_mode=None,route_info=None)
+
     def test_normal_oneshot_keeps_existing_fallback_policy(self):
         from hermes_cli.oneshot import _ModelChoice, _resolve_one_shot_runtime
         choice = _ModelChoice(model="model-x", provider="nous")

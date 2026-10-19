@@ -4688,7 +4688,8 @@ def _resolve_auto_route(
     routed = _try_main_provider_route(main_provider, main_model, base_url, api_key, api_mode)
     if routed is not None:
         return routed
-    if os.environ.get("HERMES_NO_FALLBACK") == "1":
+    if (os.environ.get("HERMES_NO_FALLBACK") == "1"
+            or os.environ.get("HERMES_SAFE_MODE") == "1"):
         return None, None, ""
     if task:
         fb_client, fb_model, fb_label = _try_configured_fallback_chain(
@@ -8123,8 +8124,9 @@ def _plan_aux_call(
     # Strict one-shot review mode forbids ALL auxiliary LLM dispatch, including
     # first-party/same-provider title, vision, compression and fallback calls.
     # An auxiliary has its own routing policy and may select another account.
-    if os.environ.get("HERMES_NO_FALLBACK") == "1":
-        raise RuntimeError("Auxiliary model calls disabled by --no-fallback")
+    if (os.environ.get("HERMES_NO_FALLBACK") == "1"
+            or os.environ.get("HERMES_SAFE_MODE") == "1"):
+        raise RuntimeError("Auxiliary model calls disabled by safe/no-fallback mode")
     main_runtime = _normalize_main_runtime(main_runtime)
     req = _prepare_aux_request(
         task, provider=provider, model=model, base_url=base_url, api_key=api_key,

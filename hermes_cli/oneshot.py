@@ -504,6 +504,12 @@ def _resolve_one_shot_runtime(cfg, choice):
     """Resolve a one-shot route, never selecting another provider when pinned."""
     from hermes_cli.runtime_provider import resolve_runtime_provider, resolve_runtime_with_fallback
 
+    if (os.environ.get("HERMES_NO_FALLBACK") == "1"
+            and (not choice.provider
+                 or str(choice.provider).strip().lower() == "auto")):
+        # Auto provider selection has an internal auth-recovery ladder, even
+        # without a configured fallback chain. Fail before any network call.
+        raise ValueError("--no-fallback requires an explicit --provider")
     fields = dict(
         requested=choice.provider,
         target_model=choice.model or None,
