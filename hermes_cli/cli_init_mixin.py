@@ -292,7 +292,12 @@ class CLIInitMixin:
             except (TypeError, ValueError):
                 pass
 
-        self._fallback_model = get_fallback_chain(CLI_CONFIG)
+        self._fallback_model = (
+            [] if any(os.environ.get(flag) == "1" for flag in (
+                "HERMES_NO_FALLBACK", "HERMES_SAFE_MODE",
+                "HERMES_IGNORE_USER_CONFIG"))
+            else get_fallback_chain(CLI_CONFIG)
+        )
 
     def _init_runtime_state(self, resume):
         """Session store + all per-run mutable state (queues, overlays, pet/voice/status-bar fields)."""

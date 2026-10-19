@@ -201,6 +201,8 @@ def _add_top_level_flags(parser: argparse.ArgumentParser) -> None:
               help=f"Ignore {_cfg_path()} and fall back to built-in defaults (credentials in .env are still loaded)")
     inherited(parser, "--ignore-rules", action="store_true", default=False,
               help="Skip auto-injection of AGENTS.md, SOUL.md, .cursorrules, memory, and preloaded skills")
+    inherited(parser, "--no-fallback", action="store_true", default=False,
+              help="Disable all model-provider fallbacks for this invocation; error instead of switching providers")
     inherited(parser, "--safe-mode", action="store_true", default=False,
               help="Troubleshooting mode: disable ALL customizations — user config, AGENTS.md/memory injection, plugins, and MCP servers (implies --ignore-user-config and --ignore-rules)")
     inherited(parser, "--tui", action="store_true", default=False,
@@ -304,6 +306,8 @@ def _build_chat_parser(subparsers) -> argparse.ArgumentParser:
               help=f"Ignore {_cfg_path()} and fall back to built-in defaults (credentials in .env are still loaded). Useful for isolated CI runs, reproduction, and third-party integrations.")
     inherited(chat_parser, "--ignore-rules", action="store_true", default=SUPPRESS,
               help="Skip auto-injection of AGENTS.md, SOUL.md, .cursorrules, memory, and preloaded skills. Combine with --ignore-user-config for a fully isolated run.")
+    inherited(chat_parser, "--no-fallback", action="store_true", default=SUPPRESS,
+              help="Disable all model-provider fallbacks for this chat")
     inherited(chat_parser, "--safe-mode", action="store_true", default=SUPPRESS,
               help="Troubleshooting mode: disable ALL customizations — user config, AGENTS.md/memory injection, plugins, and MCP servers (implies --ignore-user-config and --ignore-rules). Use to isolate whether a problem comes from your setup or from Hermes itself.")
     add("--source", default=None,

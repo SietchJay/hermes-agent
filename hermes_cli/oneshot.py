@@ -500,6 +500,31 @@ def _apply_stored_session_runtime(
     return choice
 
 
+def _resolve_one_shot_runtime(cfg, choice):
+    """Resolve a one-shot route, never selecting another provider when pinned."""
+    from hermes_cli.runtime_provider import resolve_runtime_provider, resolve_runtime_with_fallback
+
+    if ((os.environ.get("HERMES_NO_FALLBACK") == "1"
+             or os.environ.get("HERMES_SAFE_MODE") == "1"
+             or os.environ.get("HERMES_IGNORE_USER_CONFIG") == "1")
+            and (not choice.provider
+                 or str(choice.provider).strip().lower() == "auto")):
+        # Auto provider selection has an internal auth-recovery ladder, even
+        # without a configured fallback chain. Fail before any network call.
+        raise ValueError("--no-fallback requires an explicit --provider")
+    fields = dict(
+        requested=choice.provider,
+        target_model=choice.model or None,
+        explicit_base_url=choice.base_url,
+        explicit_api_key=choice.api_key,
+    )
+    if (os.environ.get("HERMES_NO_FALLBACK") == "1"
+            or os.environ.get("HERMES_SAFE_MODE") == "1"
+            or os.environ.get("HERMES_IGNORE_USER_CONFIG") == "1"):
+        return resolve_runtime_provider(**fields), None
+    return resolve_runtime_with_fallback(cfg, **fields)
+
+
 def _run_agent(
     prompt: str,
     model: Optional[str] = None,
@@ -529,13 +554,7 @@ def _run_agent(
     choice = _apply_stored_session_runtime(choice, resume_meta, explicit_model=bool((model or "").strip()))
     # Resolution-time fallback (#81209): a quota-exhausted/expired primary raises AuthError here, before
     # AIAgent (and its mid-session ``fallback_model`` wiring) exists, so walk the chain like the gateway.
-    runtime, fallback_entry = resolve_runtime_with_fallback(
-        cfg,
-        requested=choice.provider,
-        target_model=choice.model or None,
-        explicit_base_url=choice.base_url,
-        explicit_api_key=choice.api_key,
-    )
+    runtime, fallback_entry = _resolve_one_shot_runtime(cfg, choice)
     if fallback_entry is not None:
         # The chosen entry names the model that will be sent; the primary's stored api_mode no longer applies.
         choice = dataclasses.replace(choice, model=fallback_entry["model"], provider=runtime.get("provider"),
@@ -587,7 +606,12 @@ def _run_agent(
             session_db=session_db,
             session_id=resume_sid,
             credential_pool=runtime.get("credential_pool"),
-            fallback_model=get_fallback_chain(cfg) or None,
+            fallback_model=(
+                None if (os.environ.get("HERMES_NO_FALLBACK") == "1"
+                         or os.environ.get("HERMES_SAFE_MODE") == "1"
+                         or os.environ.get("HERMES_IGNORE_USER_CONFIG") == "1")
+                else get_fallback_chain(cfg) or None
+            ),
             # The resolved provider's request body (a custom entry's extra_body), as `hermes chat` passes it.
             request_overrides=runtime.get("request_overrides"),
             ephemeral_system_prompt=skills_prompt,
