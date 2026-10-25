@@ -3072,18 +3072,70 @@ def _set_chat_arg_defaults(args) -> None:
             setattr(args, attr, default)
 
 
+def _private_oneshot_file(path: str) -> str:
+    """Read one owner-only UTF-8 prompt without ever exposing its text in argv.
+
+    One os.open/O_NOFOLLOW + fstat on the SAME fd avoids symlink/TOCTOU races.
+    This option intentionally fails closed where POSIX nofollow/uid checks are
+    unavailable; other platforms can use existing -z or the interactive CLI.
+    """
+    import stat as _stat
+
+    max_bytes = 128 * 1024
+    if (not isinstance(path, str) or not path or not hasattr(os, "O_NOFOLLOW")
+        or not hasattr(os, "getuid")):
+        print("Error: secure --oneshot-file requires POSIX O_NOFOLLOW", file=sys.stderr)
+        raise SystemExit(2)
+    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError:
+        print("Error: cannot securely open --oneshot-file", file=sys.stderr)
+        raise SystemExit(2) from None
+    try:
+        meta = os.fstat(fd)
+        if (not _stat.S_ISREG(meta.st_mode) or meta.st_uid != os.getuid()
+            or meta.st_mode & 0o077 or meta.st_nlink != 1
+            or meta.st_size > max_bytes):
+            print("Error: --oneshot-file requires an owner-only regular file", file=sys.stderr)
+            raise SystemExit(2)
+        raw = os.read(fd, max_bytes + 1)
+    except OSError:
+        print("Error: cannot read --oneshot-file", file=sys.stderr)
+        raise SystemExit(2) from None
+    finally:
+        os.close(fd)
+    if len(raw) > max_bytes:
+        print("Error: --oneshot-file exceeds 128 KiB", file=sys.stderr)
+        raise SystemExit(2)
+    try:
+        prompt = raw.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        print("Error: --oneshot-file must contain UTF-8", file=sys.stderr)
+        raise SystemExit(2) from None
+    if not prompt.strip():
+        print("Error: --oneshot-file is empty", file=sys.stderr)
+        raise SystemExit(2)
+    return prompt
+
+
 def _run_oneshot_from_args(args) -> None:
-    """Top-level --oneshot / -z: single-shot mode, stdout = final response only.
+    """Top-level --oneshot / -z or --oneshot-file: final answer to stdout only.
 
     Bypasses cli.py entirely; _run_and_exit_oneshot never returns.
     """
+    if getattr(args, "oneshot_file", None) and getattr(args, "oneshot", None):
+        print("Error: choose only one of -z/--oneshot and --oneshot-file", file=sys.stderr)
+        raise SystemExit(2)
+    file_prompt = getattr(args, "oneshot_file", None)
+    prompt = _private_oneshot_file(file_prompt) if file_prompt else args.oneshot
     _confirm_startup_expensive_model_override(args)
     # -z honors --resume/-c/--in exactly like chat (#105892): normalize BEFORE the
     # oneshot exit path takes over, else the flags parse fine but silently do nothing
     # and the turn starts a fresh session (every wire request loses all history).
     _resolve_chat_session_args(args, use_tui=False)
     _run_and_exit_oneshot(
-        args.oneshot,
+        prompt,
         model=getattr(args, "model", None),
         provider=getattr(args, "provider", None),
         toolsets=getattr(args, "toolsets", None),
@@ -3191,7 +3243,7 @@ def _try_fast_chat_launch() -> bool:
         os.environ["HERMES_YOLO_MODE"] = "1"
     _prepare_agent_startup(args)
 
-    if getattr(args, "oneshot", None):
+    if getattr(args, "oneshot", None) or getattr(args, "oneshot_file", None):
         _run_oneshot_from_args(args)
 
     _promote_top_level_resume(args)
@@ -3219,7 +3271,8 @@ def _try_termux_fast_cli_launch() -> bool:
 
     first = _first_positional_argv()
     has_oneshot = any(
-        arg == "-z" or arg == "--oneshot" or arg.startswith("--oneshot=")
+        arg in {"-z", "--oneshot", "--oneshot-file"}
+        or arg.startswith("--oneshot=") or arg.startswith("--oneshot-file=")
         for arg in argv
     )
     if not has_oneshot and first not in {None, "chat"}:
@@ -3232,7 +3285,7 @@ def _try_termux_fast_cli_launch() -> bool:
         _print_version_info(check_updates=True)
         return True
 
-    if getattr(args, "oneshot", None):
+    if getattr(args, "oneshot", None) or getattr(args, "oneshot_file", None):
         _prepare_agent_startup(args)
         _run_oneshot_from_args(args)
 
@@ -3602,7 +3655,7 @@ def main():
     # trigger no consent prompts for hooks the user is still inspecting.
     _prepare_agent_startup(args)
 
-    if getattr(args, "oneshot", None):
+    if getattr(args, "oneshot", None) or getattr(args, "oneshot_file", None):
         _run_oneshot_from_args(args)
 
     from hermes_cli.observability.shared_metrics_disabled import set_process_surface
