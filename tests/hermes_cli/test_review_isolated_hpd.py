@@ -107,6 +107,29 @@ class IsolatedReviewerTest(TestCase):
             cli_main._apply_safe_mode(flags(review_isolated=False))
             self.assertEqual(os.environ["HERMES_IGNORE_USER_CONFIG"], "1")
 
+    def test_main_routes_review_before_boot_or_update_side_effects(self):
+        fake = flags()
+        with patch.object(cli_main.sys, "argv", [
+                "hermes", "--review-isolated", "--oneshot-file", "/tmp/query",
+                "--usage-file", "/tmp/usage", "--safe-mode", "--no-fallback",
+                "--provider", "custom:groq-free-review", "--model", "qwen/qwen3.8-27b",
+             ]), \
+             patch.object(cli_main, "_set_process_title"), \
+             patch.object(cli_main, "_warn_if_unsupervised_pid1"), \
+             patch.object(cli_main, "_advertise_agent_env"), \
+             patch.object(cli_main, "_light_chat_parser") as parser, \
+             patch.object(cli_main, "_prepare_agent_startup") as prepare, \
+             patch.object(cli_main, "_run_oneshot_from_args",
+                          side_effect=SystemExit(0)) as invoke, \
+             patch.object(cli_main, "_recover_update_debts_on_startup",
+                          side_effect=AssertionError("unexpected updater")):
+            parser.return_value.parse_args.return_value = fake
+            with self.assertRaises(SystemExit) as e:
+                cli_main.main()
+        self.assertEqual(e.exception.code, 0)
+        prepare.assert_called_once_with(fake)
+        invoke.assert_called_once_with(fake)
+
     def test_pre_start_isolation_excludes_discovery_registration(self):
         with patch.dict(os.environ, {}, clear=True):
             with patch.object(cli_main, "_guard_noninteractive_user_config") as guard:
