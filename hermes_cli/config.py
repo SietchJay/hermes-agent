@@ -2127,9 +2127,9 @@ def load_config() -> dict[str, Any]:
 
 
 def load_config_readonly() -> dict[str, Any]:
-    """``load_config()`` without the defensive deepcopy (~half of the 265us cache-hit cost).
-    **Mutating the returned dict (or any nested structure) corrupts the in-process cache for
-    every subsequent caller** — only for code paths that never write to the result."""
+    """Return the readonly configuration; source reviews get a pinned projection."""
+    if os.environ.get("HERMES_REVIEW_ISOLATED") == "1":
+        return _isolated_review_config(_load_config_impl(want_deepcopy=True))
     return _load_config_impl(want_deepcopy=False)
 
 
