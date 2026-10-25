@@ -536,8 +536,14 @@ def _run_agent(
     from hermes_cli.tools_config import _get_platform_tools
     from run_agent import AIAgent
 
+    isolated = os.environ.get("HERMES_REVIEW_ISOLATED") == "1"
+    if isolated and (resume or toolsets or skills):
+        raise ValueError("isolated review forbids resume, toolsets and skills")
     cfg = load_config()
     choice = _resolve_model_and_provider(cfg, model, provider)
+    if isolated and (choice.provider != os.environ.get("HERMES_REVIEW_PROVIDER_PIN")
+                     or choice.model != os.environ.get("HERMES_REVIEW_MODEL_PIN")):
+        raise ValueError("isolated review provider/model identity mismatch")
     # Resume resolves BEFORE the runtime provider: the session's stored model/route must
     # replace the ambient config (see _apply_stored_session_runtime) and the ended row must
     # be reopened before the agent can stamp a new lifecycle boundary.
@@ -565,8 +571,8 @@ def _run_agent(
             reasoning_config = parsed_reasoning
 
     # sorted() gives stable ordering for config-derived sets; explicit values preserve user order.
-    toolsets_list = _normalize_toolsets(toolsets)
-    if toolsets_list is None and use_config_toolsets:
+    toolsets_list = [] if isolated else _normalize_toolsets(toolsets)
+    if not isolated and toolsets_list is None and use_config_toolsets:
         toolsets_list = sorted(_get_platform_tools(cfg, "cli"))
 
     # Oneshot builds AIAgent directly, bypassing cli.py's MCP background discovery and
@@ -577,9 +583,10 @@ def _run_agent(
     # ONE turn and no between-turns late-binding refresh (#38448).
     from hermes_cli.mcp_startup import ensure_mcp_discovery_before_agent_build
 
-    ensure_mcp_discovery_before_agent_build(logger=logging.getLogger(__name__), single_query=True)
+    if not isolated:
+        ensure_mcp_discovery_before_agent_build(logger=logging.getLogger(__name__), single_query=True)
 
-    skills_prompt = _build_preloaded_skills_prompt(skills)
+    skills_prompt = None if isolated else _build_preloaded_skills_prompt(skills)
 
     # The try spans agent construction (not just ``chat``) so the store is always closed, even when
     # ``AIAgent(...)`` raises — the one-shot exit path hard-exits via os._exit and skips finalizers.
