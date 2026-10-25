@@ -21,7 +21,7 @@ PRE_ARGPARSE_INHERITED_FLAGS: list[tuple[str, bool]] = [("--profile", True), ("-
 # snapshot lacks AND derivation regresses.
 _VALUE_FLAGS_FALLBACK: frozenset[str] = frozenset({
     "-z", "--oneshot", "-m", "--model", "--provider", "--reasoning", "-t", "--toolsets",
-    "-r", "--resume", "-s", "--skills", "--usage-file", "--in",
+    "-r", "--resume", "-s", "--skills", "--usage-file", "--oneshot-file", "--in",
 })
 _OPTIONAL_VALUE_FLAGS_FALLBACK: frozenset[str] = frozenset({"-c", "--continue"})
 
@@ -151,11 +151,16 @@ def _add_top_level_flags(parser: argparse.ArgumentParser) -> None:
         "previews, no session_id line. Tools, memory, rules, and "
         "AGENTS.md in the CWD are loaded as normal; approvals are "
         "auto-bypassed. Intended for scripts / pipes."))
+    add("--oneshot-file", metavar="PATH", default=None, help=(
+        "One-shot mode: read a bounded private UTF-8 prompt file, without "
+        "putting the prompt in process arguments. May be used with "
+        "--usage-file, --provider, --model and --no-fallback. "
+        "Mutually exclusive with -z/--oneshot PROMPT."))
     add("--usage-file", metavar="PATH", default=None, help=(
-        "One-shot mode only: after the run, write a JSON usage report "
+        "One-shot mode (-z or --oneshot-file) only: write a JSON usage report "
         "(estimated cost, token counts, model, api_calls) to PATH. "
         "The report is written even when the run fails, so pipelines "
-        "can always account for spend. No effect outside -z/--oneshot."))
+        "can always account for spend. No effect outside one-shot mode."))
     # --model / --provider are accepted at the top level so they can pair with -z without the
     # `chat` subcommand; if neither -z nor a subcommand consumes them, they fall through as None.
     inherited(parser, "-m", "--model", default=None, help=(
