@@ -609,7 +609,7 @@ def _run_agent(
             requested_provider=runtime.get("requested_provider"),
             api_mode=runtime.get("api_mode"),
             model=choice.model,
-            max_iterations=1 if isolated else __import__("sys").maxsize,
+            max_iterations=1 if isolated else sys.maxsize,
             enabled_toolsets=toolsets_list,
             quiet_mode=True,
             platform="cli",
