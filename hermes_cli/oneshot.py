@@ -272,9 +272,15 @@ def run_oneshot(
         return 2
     use_config_toolsets = _normalize_toolsets(toolsets) is None
 
-    # Non-interactive by definition — an approval prompt would hang forever.
-    os.environ["HERMES_YOLO_MODE"] = "1"
-    os.environ["HERMES_ACCEPT_HOOKS"] = "1"
+    # Existing general one-shots auto-approve tools, but the restricted
+    # source reviewer MUST NOT inherit that policy. No hooks or tools.
+    isolated = os.environ.get("HERMES_REVIEW_ISOLATED") == "1"
+    if isolated:
+        os.environ.pop("HERMES_YOLO_MODE", None)
+        os.environ.pop("HERMES_ACCEPT_HOOKS", None)
+    else:
+        os.environ["HERMES_YOLO_MODE"] = "1"
+        os.environ["HERMES_ACCEPT_HOOKS"] = "1"
     # Same finite-chat marker as `hermes chat -q` (cli.py): the session-source resolver uses it to drop an
     # inherited tui/desktop transport label, and delegate dispatch to route detached results inline.
     os.environ["HERMES_SINGLE_QUERY_SESSION"] = "1"
@@ -536,13 +542,23 @@ def _run_agent(
     from hermes_cli.tools_config import _get_platform_tools
     from run_agent import AIAgent
 
+    isolated = os.environ.get("HERMES_REVIEW_ISOLATED") == "1"
+    if isolated and (resume or toolsets or skills):
+        raise ValueError("isolated review forbids resume, toolsets and skills")
     cfg = load_config()
     choice = _resolve_model_and_provider(cfg, model, provider)
+    if isolated and (choice.provider != os.environ.get("HERMES_REVIEW_PROVIDER_PIN")
+                     or choice.model != os.environ.get("HERMES_REVIEW_MODEL_PIN")):
+        raise ValueError("isolated review provider/model identity mismatch")
     # Resume resolves BEFORE the runtime provider: the session's stored model/route must
     # replace the ambient config (see _apply_stored_session_runtime) and the ended row must
     # be reopened before the agent can stamp a new lifecycle boundary.
-    session_db = _create_session_db_for_oneshot()
-    resume_sid, conversation_history, resume_meta = _load_resume_target(session_db, resume)
+    # Source review prompts must not be persisted to the normal chat/session
+    # database or trigger automatic session-title/model upgrades.
+    session_db = None if isolated else _create_session_db_for_oneshot()
+    resume_sid, conversation_history, resume_meta = (
+        (None, None, None) if isolated else _load_resume_target(session_db, resume)
+    )
     choice = _apply_stored_session_runtime(choice, resume_meta, explicit_model=bool((model or "").strip()))
     # Resolution-time fallback (#81209): a quota-exhausted/expired primary raises AuthError here, before
     # AIAgent (and its mid-session ``fallback_model`` wiring) exists, so walk the chain like the gateway.
@@ -565,8 +581,8 @@ def _run_agent(
             reasoning_config = parsed_reasoning
 
     # sorted() gives stable ordering for config-derived sets; explicit values preserve user order.
-    toolsets_list = _normalize_toolsets(toolsets)
-    if toolsets_list is None and use_config_toolsets:
+    toolsets_list = [] if isolated else _normalize_toolsets(toolsets)
+    if not isolated and toolsets_list is None and use_config_toolsets:
         toolsets_list = sorted(_get_platform_tools(cfg, "cli"))
 
     # Oneshot builds AIAgent directly, bypassing cli.py's MCP background discovery and
@@ -577,9 +593,10 @@ def _run_agent(
     # ONE turn and no between-turns late-binding refresh (#38448).
     from hermes_cli.mcp_startup import ensure_mcp_discovery_before_agent_build
 
-    ensure_mcp_discovery_before_agent_build(logger=logging.getLogger(__name__), single_query=True)
+    if not isolated:
+        ensure_mcp_discovery_before_agent_build(logger=logging.getLogger(__name__), single_query=True)
 
-    skills_prompt = _build_preloaded_skills_prompt(skills)
+    skills_prompt = None if isolated else _build_preloaded_skills_prompt(skills)
 
     # The try spans agent construction (not just ``chat``) so the store is always closed, even when
     # ``AIAgent(...)`` raises — the one-shot exit path hard-exits via os._exit and skips finalizers.
@@ -592,6 +609,7 @@ def _run_agent(
             requested_provider=runtime.get("requested_provider"),
             api_mode=runtime.get("api_mode"),
             model=choice.model,
+            max_iterations=1 if isolated else sys.maxsize,
             enabled_toolsets=toolsets_list,
             quiet_mode=True,
             platform="cli",
@@ -624,8 +642,13 @@ def _run_agent(
         relay_session_id = getattr(agent, "session_id", None)
         result = agent.run_conversation(prompt, conversation_history=conversation_history or None)
         if ledger:
-            _attach_auxiliary_usage(result, session_db, aux_before,
-                                    fallback_session_id=agent.session_id or resume_sid)
+            if isolated:
+                # Dedicated auxiliary-client guard rejects all subsidiary
+                # inference in this mode. No session/title background calls.
+                result["auxiliary_usage"] = {}
+            else:
+                _attach_auxiliary_usage(result, session_db, aux_before,
+                                        fallback_session_id=agent.session_id or resume_sid)
         return (result.get("final_response") or "", result)
     finally:
         _close_agent(agent, session_db, relay_session_id)

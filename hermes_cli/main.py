@@ -2914,6 +2914,47 @@ def _should_background_mcp_startup(args) -> bool:
     return not _is_tui_chat_launch(args) and args.command in {None, "chat", "rl"}
 
 
+def _apply_review_isolated(args) -> None:
+    """Validate opt-in no-tools source review before reading provider config."""
+    if not getattr(args, "review_isolated", False):
+        return
+    invalid = (
+        not getattr(args, "oneshot_file", None)
+        or not getattr(args, "usage_file", None)
+        or not getattr(args, "safe_mode", False)
+        or not getattr(args, "no_fallback", False)
+        or not getattr(args, "provider", None)
+        or not getattr(args, "model", None)
+        or getattr(args, "oneshot", None)
+        or getattr(args, "resume", None)
+        or getattr(args, "continue_last", None)
+        or getattr(args, "toolsets", None)
+        or getattr(args, "skills", None)
+        or getattr(args, "yolo", False)
+        or getattr(args, "accept_hooks", False)
+        or getattr(args, "ignore_user_config", False)
+        or getattr(args, "in_dir", None)
+        or os.environ.get("HERMES_IGNORE_USER_CONFIG") == "1"
+        or os.environ.get("HERMES_YOLO_MODE") == "1"
+    )
+    if invalid:
+        print("Error: invalid isolated review flags", file=sys.stderr)
+        raise SystemExit(2)
+    provider = str(args.provider).strip().lower()
+    model = str(args.model).strip()
+    if (provider != "nous" and not provider.startswith("custom:")) or not model:
+        print("Error: isolated reviewer provider/model not allowed", file=sys.stderr)
+        raise SystemExit(2)
+    os.environ["HERMES_REVIEW_ISOLATED"] = "1"
+    # Defense in depth for direct uses of the validator (startup also calls
+    # _apply_safe_mode). Never rely solely on a later CLI dispatch step.
+    os.environ["HERMES_SAFE_MODE"] = "1"
+    os.environ["HERMES_REVIEW_PROVIDER_PIN"] = provider
+    os.environ["HERMES_REVIEW_MODEL_PIN"] = model
+    os.environ["HERMES_NO_FALLBACK"] = "1"
+    os.environ["HERMES_IGNORE_RULES"] = "1"
+
+
 def _prepare_agent_startup(args) -> None:
     """Discover plugins/MCP/hooks for commands that can run an agent turn."""
     # --yolo chokepoint: HERMES_YOLO_MODE must be set before any discovery
@@ -2921,11 +2962,15 @@ def _prepare_agent_startup(args) -> None:
     # main() sets it earlier too, but other launchers (Termux fast-CLI) reach
     # here directly, so the guarantee lives where the import is triggered.
     # See #7994.
+    _apply_review_isolated(args)
     if getattr(args, "yolo", False):
         os.environ["HERMES_YOLO_MODE"] = "1"
     _apply_safe_mode(args)
     _apply_user_config_bypass(args)
     _guard_noninteractive_user_config(args)
+    if getattr(args, "review_isolated", False):
+        # No discovery, tool spawn, background threads, hooks or webhooks.
+        return
 
     if not (args.command in _AGENT_COMMANDS or _agent_subcommand_selected(args)):
         return
@@ -3013,7 +3058,10 @@ def _apply_safe_mode(args) -> None:
     if not getattr(args, "safe_mode", False):
         return
     os.environ["HERMES_SAFE_MODE"] = "1"
-    os.environ["HERMES_IGNORE_USER_CONFIG"] = "1"
+    # Review isolation uses a strict, single-provider in-memory config
+    # projection instead of hiding the explicitly requested custom provider.
+    if not getattr(args, "review_isolated", False):
+        os.environ["HERMES_IGNORE_USER_CONFIG"] = "1"
     os.environ["HERMES_IGNORE_RULES"] = "1"
 
 
@@ -3032,6 +3080,7 @@ def _guard_noninteractive_user_config(args) -> None:
 
     is_noninteractive = (
         bool(getattr(args, "oneshot", None))
+        or bool(getattr(args, "oneshot_file", None))
         or bool(getattr(args, "query", None))
     )
     if not is_noninteractive:
@@ -3046,7 +3095,8 @@ def _guard_noninteractive_user_config(args) -> None:
         require_parseable_user_config(
             ignore_user_config=bool(
                 getattr(args, "ignore_user_config", False)
-                or getattr(args, "safe_mode", False)
+                or (getattr(args, "safe_mode", False)
+                    and not getattr(args, "review_isolated", False))
             )
         )
     except InvalidUserConfigError as exc:
@@ -3567,6 +3617,17 @@ def main():
     _set_process_title()
     _warn_if_unsupervised_pid1()
     _advertise_agent_env()
+
+    # Opt-in HPD source review must be validated BEFORE the normal CLI's
+    # boot auto-repair, plugin command registrations, checkout cleanup,
+    # update-debt gateway restarts, MCP discovery, or hook initialization.
+    # Keep this narrow: a fully explicit one-shot, never a generic chat CLI.
+    if "--review-isolated" in sys.argv[1:]:
+        parser = _light_chat_parser()
+        args = parser.parse_args(sys.argv[1:])
+        _prepare_agent_startup(args)  # validates every safety invariant
+        _run_oneshot_from_args(args)  # hard-exits on completion
+        raise SystemExit(1)  # never continue into the normal dispatcher
 
     # Force UTF-8 stdio on Windows before anything prints.  No-op elsewhere.
     try:
