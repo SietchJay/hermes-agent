@@ -5436,6 +5436,8 @@ def resolve_provider_client(
     (full auto-detection chain). ``model=None`` → provider's default aux model. ``raw_codex`` → bare OpenAI
     client for ``responses.stream()`` callers. ``api_mode`` forces "codex_responses"/"chat_completions"/
     "anthropic_messages" instead of auto-detect. Returns (client, resolved_model) or (None, None)."""
+    if os.environ.get("HERMES_REVIEW_ISOLATED") == "1":
+        raise RuntimeError("auxiliary_model_disabled_for_isolated_review")
     _validate_proxy_env_urls()
     # Keep the pre-alias name so a custom_providers entry named like a built-in alias
     # (e.g. "kimi" → "kimi-coding") is still reachable via the named-custom branch.
@@ -8055,6 +8057,8 @@ def call_llm(
     latency_info: Optional[dict[str, int]] = None,
 ) -> Any:
     """Run an auxiliary LLM request, applying the configured task limit."""
+    if os.environ.get("HERMES_REVIEW_ISOLATED") == "1":
+        raise RuntimeError("auxiliary_model_disabled_for_isolated_review")
     queue_started_at = time.monotonic()
     semaphore = _acquire_sync_aux_semaphore(task)
     if semaphore is not None:
@@ -8355,6 +8359,8 @@ async def async_call_llm(
     route_info: Optional[dict[str, str]] = None,
 ) -> Any:
     """Run an asynchronous auxiliary LLM request under the configured limit."""
+    if os.environ.get("HERMES_REVIEW_ISOLATED") == "1":
+        raise RuntimeError("auxiliary_model_disabled_for_isolated_review")
     semaphore = _acquire_async_aux_semaphore(task)
     if semaphore is not None:
         await semaphore.acquire()
