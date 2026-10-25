@@ -2064,11 +2064,66 @@ def atomic_config_replace(
         config_path, data, allow_omissions=True, extra_content_on_create=extra_content_on_create)
 
 
+def _isolated_review_config(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Only the explicitly pinned inference provider survives review isolation.
+
+    This process-local projection must never be saved. All model defaults,
+    fallback chains, tools, hooks, plugins, auxiliary routes and MCP servers
+    from the user's original config are excluded. Fail closed on ambiguity.
+    """
+    requested = os.environ.get("HERMES_REVIEW_PROVIDER_PIN", "").strip()
+    model = os.environ.get("HERMES_REVIEW_MODEL_PIN", "").strip()
+    if not requested or not model or requested == "auto":
+        raise ValueError("isolated review requires exact provider and model")
+    entries = {}
+    if requested == "nous":
+        pass  # Existing Nous auth source; no custom config is needed.
+    elif requested.startswith("custom:"):
+        name = requested.split(":", 1)[1]
+        original = (cfg.get("providers") or {}).get(name)
+        if not isinstance(original, dict) or original.get("enabled") is not True:
+            raise ValueError("isolated named provider is disabled or missing")
+        # key_cmd / inline key / extra_body / extra_headers could run commands
+        # or redirect requests; none may survive an isolated review.
+        if any(original.get(x) for x in ("key_cmd", "api_key", "extra_body",
+                                          "extra_headers", "models_api")):
+            raise ValueError("isolated provider has unsafe config fields")
+        endpoint = original.get("api")
+        key_env = original.get("key_env")
+        if (not isinstance(endpoint, str) or not endpoint.startswith("https://")
+            or not isinstance(key_env, str) or not key_env.isidentifier()
+            or original.get("transport") != "chat_completions"
+            or original.get("discover_models") is not False
+            or model not in (original.get("models") or [])):
+            raise ValueError("isolated provider configuration is not pinned")
+        entries[name] = {
+            "enabled": True, "api": endpoint, "key_env": key_env,
+            "transport": "chat_completions", "discover_models": False,
+            "default_model": model, "models": [model],
+        }
+    else:
+        raise ValueError("isolated review accepts only Nous or named custom providers")
+    return {
+        "model": {"provider": requested, "default": model},
+        "providers": entries,
+        "fallback_model": None, "fallback_providers": [],
+        "mcp_servers": {}, "hooks": {}, "plugins": {}, "skills": {},
+        "auxiliary": {"free_only": True},
+        "agent": {"max_iterations": 1},
+    }
+
+
 def load_config() -> dict[str, Any]:
-    """Load the merged configuration (DEFAULT_CONFIG + config.yaml + managed scope, env-expanded).
-    Cached on the file signature; returns a deepcopy since most call sites mutate the result.
-    Read-only hot paths should use ``load_config_readonly()`` to skip the deepcopy."""
-    return _load_config_impl(want_deepcopy=True)
+    """Load the merged configuration, or a minimal source-review projection.
+
+    Review projection is never cached or persisted; each caller receives an
+    isolated dict. The original settings are parsed but cannot contribute
+    secondary providers, fallback, tools, hooks, plugins or model overrides.
+    """
+    cfg = _load_config_impl(want_deepcopy=True)
+    if os.environ.get("HERMES_REVIEW_ISOLATED") == "1":
+        return _isolated_review_config(cfg)
+    return cfg
 
 
 def load_config_readonly() -> dict[str, Any]:
