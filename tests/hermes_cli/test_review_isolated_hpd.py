@@ -179,6 +179,47 @@ class IsolatedReviewerTest(TestCase):
         self.assertEqual(choice.provider, "custom:groq-free-review")
         self.assertEqual(choice.model, "qwen/qwen3.8-27b")
 
+    def test_isolated_oneshot_never_enables_yolo_or_hooks(self):
+        import tempfile
+        from pathlib import Path
+        from hermes_cli import oneshot as one
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "usage.json")
+            def observe(*args, **kwargs):
+                self.assertNotIn("HERMES_YOLO_MODE", os.environ)
+                self.assertNotIn("HERMES_ACCEPT_HOOKS", os.environ)
+                self.assertEqual(kwargs["ledger"], True)
+                return "REVIEW OK", {
+                    "completed": True, "failed": False, "api_calls": 1,
+                    "provider": "nous", "model": "test-free",
+                    "estimated_cost_usd": 0,
+                    "auxiliary_usage": {},
+                }
+            with patch.dict(os.environ, {"HERMES_REVIEW_ISOLATED": "1",
+                                         "HERMES_YOLO_MODE": "1",
+                                         "HERMES_ACCEPT_HOOKS": "1"}):
+                with patch.object(one, "declare_stateless_channel"), \
+                     patch.object(one, "_run_agent", side_effect=observe):
+                    result = one.run_oneshot("synthetic public reviewer fixture",
+                                             model="test-free", provider="nous",
+                                             usage_file=path)
+            self.assertEqual(result, 0)
+            import json
+            receipt = json.loads(Path(path).read_text(encoding="utf-8"))
+            self.assertEqual(receipt["auxiliary"]["api_calls"], 0)
+            self.assertEqual(receipt["api_calls"], 1)
+
+    def test_isolated_auxiliary_sync_async_and_client_resolution_are_blocked(self):
+        import asyncio
+        from agent import auxiliary_client as aux
+        with patch.dict(os.environ, {"HERMES_REVIEW_ISOLATED": "1"}):
+            with self.assertRaisesRegex(RuntimeError, "auxiliary_model_disabled"):
+                aux.resolve_provider_client("nous")
+            with self.assertRaisesRegex(RuntimeError, "auxiliary_model_disabled"):
+                aux.call_llm(messages=[], task="title_generation")
+            with self.assertRaisesRegex(RuntimeError, "auxiliary_model_disabled"):
+                asyncio.run(aux.async_call_llm(messages=[], task="title_generation"))
+
     def test_resolver_bypasses_fallback_chain_when_isolated(self):
         choice = SimpleNamespace(provider="custom:groq-free-review",
                                  model="qwen/qwen3.8-27b",
