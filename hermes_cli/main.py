@@ -2946,6 +2946,9 @@ def _apply_review_isolated(args) -> None:
         print("Error: isolated reviewer provider/model not allowed", file=sys.stderr)
         raise SystemExit(2)
     os.environ["HERMES_REVIEW_ISOLATED"] = "1"
+    # Defense in depth for direct uses of the validator (startup also calls
+    # _apply_safe_mode). Never rely solely on a later CLI dispatch step.
+    os.environ["HERMES_SAFE_MODE"] = "1"
     os.environ["HERMES_REVIEW_PROVIDER_PIN"] = provider
     os.environ["HERMES_REVIEW_MODEL_PIN"] = model
     os.environ["HERMES_NO_FALLBACK"] = "1"
