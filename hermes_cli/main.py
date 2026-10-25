@@ -3086,7 +3086,9 @@ def _private_oneshot_file(path: str) -> str:
         or not hasattr(os, "getuid")):
         print("Error: secure --oneshot-file requires POSIX O_NOFOLLOW", file=sys.stderr)
         raise SystemExit(2)
-    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    # O_NONBLOCK prevents a hostile FIFO from stalling before fstat rejects it.
+    flags = (os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NONBLOCK", 0))
     try:
         fd = os.open(path, flags)
     except OSError:
