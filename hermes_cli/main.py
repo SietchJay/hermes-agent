@@ -3618,6 +3618,17 @@ def main():
     _warn_if_unsupervised_pid1()
     _advertise_agent_env()
 
+    # Opt-in HPD source review must be validated BEFORE the normal CLI's
+    # boot auto-repair, plugin command registrations, checkout cleanup,
+    # update-debt gateway restarts, MCP discovery, or hook initialization.
+    # Keep this narrow: a fully explicit one-shot, never a generic chat CLI.
+    if "--review-isolated" in sys.argv[1:]:
+        parser = _light_chat_parser()
+        args = parser.parse_args(sys.argv[1:])
+        _prepare_agent_startup(args)  # validates every safety invariant
+        _run_oneshot_from_args(args)  # hard-exits on completion
+        raise SystemExit(1)  # never continue into the normal dispatcher
+
     # Force UTF-8 stdio on Windows before anything prints.  No-op elsewhere.
     try:
         from hermes_cli.stdio import configure_windows_stdio
