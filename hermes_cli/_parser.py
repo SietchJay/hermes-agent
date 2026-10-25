@@ -208,6 +208,11 @@ def _add_top_level_flags(parser: argparse.ArgumentParser) -> None:
               help="Skip auto-injection of AGENTS.md, SOUL.md, .cursorrules, memory, and preloaded skills")
     inherited(parser, "--no-fallback", action="store_true", default=False,
               help="Disable all model-provider fallbacks for this invocation; error instead of switching providers")
+    add("--review-isolated", action="store_true", default=False, help=(
+        "Strict opt-in source-review one-shot. Requires --oneshot-file, "
+        "--usage-file, --safe-mode, --no-fallback, --provider and --model; "
+        "preserves ONLY the pinned provider definition (no tools, hooks, "
+        "MCP, skills, session resume, alternate providers)."))
     inherited(parser, "--safe-mode", action="store_true", default=False,
               help="Troubleshooting mode: disable ALL customizations — user config, AGENTS.md/memory injection, plugins, and MCP servers (implies --ignore-user-config and --ignore-rules)")
     inherited(parser, "--tui", action="store_true", default=False,
