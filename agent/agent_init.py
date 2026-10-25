@@ -1092,6 +1092,17 @@ def _client_kwargs_from_routed(client, timeout) -> dict[str, Any]:
 
 
 def _load_tools(agent, enabled_toolsets, disabled_toolsets):
+    if os.environ.get("HERMES_REVIEW_ISOLATED") == "1":
+        # Even enabled_toolsets=[] is insufficient: normal initialization
+        # launches migrations and discovers plugins BEFORE filtering tools.
+        # No imports/registry mutation/discovery in a source-review one-shot.
+        agent.enabled_toolsets = []
+        agent.disabled_toolsets = []
+        agent.tools = []
+        agent.valid_tool_names = set()
+        agent._tool_snapshot_generation = 0
+        agent._kanban_worker_guidance = ""
+        return
     # A feature that left core for a catalog plugin (Home Assistant) is installed for a home that
     # used it, once per process, before discovery so its tools are in this agent's snapshot.
     from hermes_cli.left_core_migration import recover_at_startup
