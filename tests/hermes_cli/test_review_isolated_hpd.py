@@ -93,6 +93,7 @@ class IsolatedReviewerTest(TestCase):
         with patch.dict(os.environ, {}, clear=True):
             cli_main._apply_review_isolated(flags())
             self.assertEqual(os.environ["HERMES_NO_FALLBACK"], "1")
+            self.assertEqual(os.environ["HERMES_SAFE_MODE"], "1")
             self.assertEqual(os.environ["HERMES_IGNORE_RULES"], "1")
             self.assertEqual(os.environ["HERMES_REVIEW_PROVIDER_PIN"],
                              "custom:groq-free-review")
@@ -114,6 +115,46 @@ class IsolatedReviewerTest(TestCase):
             self.assertEqual(os.environ["HERMES_SAFE_MODE"], "1")
             self.assertEqual(os.environ["HERMES_NO_FALLBACK"], "1")
             self.assertNotIn("HERMES_IGNORE_USER_CONFIG", os.environ)
+
+    def test_isolated_tool_loader_does_not_import_plugins_or_tools(self):
+        import sys
+        from agent.agent_init import _load_tools
+        agent = SimpleNamespace(quiet_mode=True)
+        with patch.dict(os.environ, {"HERMES_REVIEW_ISOLATED": "1"}), \
+             patch.dict(sys.modules, {
+                 "hermes_cli.left_core_migration": None,
+                 "hermes_cli.plugins": None,
+                 "model_tools": None,
+             }):
+            _load_tools(agent, ["all"], [])
+        self.assertEqual(agent.enabled_toolsets, [])
+        self.assertEqual(agent.tools, [])
+        self.assertEqual(agent.valid_tool_names, set())
+
+    def test_config_projection_also_filters_cached_source(self):
+        with patch.dict(os.environ, {
+            "HERMES_REVIEW_ISOLATED": "1",
+            "HERMES_REVIEW_PROVIDER_PIN": "custom:groq-free-review",
+            "HERMES_REVIEW_MODEL_PIN": "qwen/qwen3.8-27b",
+        }):
+            with patch("hermes_cli.config._load_config_impl", return_value=raw()):
+                a = config.load_config()
+                b = config.load_config_readonly()
+        self.assertEqual(a, b)
+        self.assertEqual(list(a["providers"]), ["groq-free-review"])
+        self.assertEqual(a["fallback_providers"], [])
+
+    def test_model_choice_preserves_custom_name(self):
+        with patch.dict(os.environ, {
+            "HERMES_REVIEW_PROVIDER_PIN": "custom:groq-free-review",
+            "HERMES_REVIEW_MODEL_PIN": "qwen/qwen3.8-27b",
+        }):
+            cfg = config._isolated_review_config(raw())
+            choice = oneshot._resolve_model_and_provider(
+                cfg, "qwen/qwen3.8-27b", "custom:groq-free-review"
+            )
+        self.assertEqual(choice.provider, "custom:groq-free-review")
+        self.assertEqual(choice.model, "qwen/qwen3.8-27b")
 
     def test_resolver_bypasses_fallback_chain_when_isolated(self):
         choice = SimpleNamespace(provider="custom:groq-free-review",
