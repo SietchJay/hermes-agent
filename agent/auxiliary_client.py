@@ -5483,7 +5483,17 @@ def resolve_provider_client(
         # here wins over that. The main chat model is routinely text-only (e.g. a ``:free`` chat SKU), so
         # pre-filling it sends the image to a model that cannot accept one and the Portal 404s. Leave
         # ``model`` unset and let the Portal slot through; only an explicit caller model may override it.
-        model = _get_aux_model_for_provider(provider) or _read_main_model_for_aux() or model
+        if provider == "openrouter":
+            free_only, aux_openrouter_model = _aux_openrouter_settings()
+            if free_only:
+                # The main-chat "openrouter/free" router alias is not an auxiliary
+                # :free SKU.  For an unspecified OpenRouter side task, honor the
+                # separately configured auxiliary fallback before the main model.
+                # Caller-supplied models remain authoritative and are still gated
+                # by _try_openrouter (including non-free rejection).
+                model = aux_openrouter_model
+        if not model:
+            model = _get_aux_model_for_provider(provider) or _read_main_model_for_aux() or model
     req = _ResolveRequest(
         provider, original_provider, model, async_mode, raw_codex,
         explicit_base_url, explicit_api_key, api_mode, main_runtime, is_vision, task,
